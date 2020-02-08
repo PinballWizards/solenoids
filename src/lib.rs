@@ -1,8 +1,8 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
-use core::cell::UnsafeCell;
-use embedded_hal::digital::OutputPin;
+use core::cell::Cell;
 use embedded_hal::PwmPin;
+use heapless::{consts::*, Vec};
 
 #[derive(Debug)]
 pub enum Error {
@@ -15,17 +15,17 @@ pub enum InputType {
     Triple,
 }
 
-pub struct InputData {
-    location: *mut u16,
+pub struct InputData<'a> {
+    location: &'a Cell<u16>,
     start_offset: u16,
     _type: InputType,
 }
 
-impl InputData {
+impl<'a> InputData<'a> {
     pub fn input1_is_high(&self) -> Option<bool> {
         match self._type {
             InputType::Single | InputType::Double | InputType::Triple => {
-                Some(unsafe { self.location.read() } & (1 << (0 + self.start_offset)) != 0)
+                Some(self.location.get() & (1 << (0 + self.start_offset)) != 0)
             }
         }
     }
@@ -34,7 +34,7 @@ impl InputData {
         match self._type {
             InputType::Single => None,
             InputType::Double | InputType::Triple => {
-                Some(unsafe { self.location.read() } & (1 << (1 + self.start_offset)) != 0)
+                Some(self.location.get() & (1 << (1 + self.start_offset)) != 0)
             }
         }
     }
@@ -42,79 +42,73 @@ impl InputData {
     pub fn input3_is_high(&self) -> Option<bool> {
         match self._type {
             InputType::Single | InputType::Double => None,
-            InputType::Triple => {
-                Some(unsafe { self.location.read() } & (1 << (2 + self.start_offset)) != 0)
-            }
+            InputType::Triple => Some(self.location.get() & (1 << (2 + self.start_offset)) != 0),
         }
     }
 }
 
 // (start_offset, len)
-type InputLayout = [(u8, u8); 16];
+type InputLayout = Vec<(u8, u8), U6>;
 
 pub struct InputArray {
-    raw: UnsafeCell<u16>,
-    layout: InputLayout,
-    input_count: UnsafeCell<u16>,
+    raw: Cell<u16>,
+    layout: Cell<InputLayout>,
 }
 
 impl InputArray {
     pub fn new() -> Self {
         Self {
-            raw: UnsafeCell::new(0),
-            layout: [(0, 0); 16],
-            input_count: UnsafeCell::new(0),
+            raw: Cell::new(0),
+            layout: Cell::new(Vec::new()),
         }
     }
 
-    pub fn update(&mut self, data: u16) {
-        unsafe {
-            self.raw.get().replace(data);
-        }
+    pub fn update(&self, data: u16) {
+        self.raw.replace(data);
     }
 
-    pub fn get_input(&mut self, input: InputType) -> Result<InputData, Error> {
-        let curr_input_count = unsafe { self.input_count.get().read() } as usize;
-        if curr_input_count == 15 {
-            return Err(Error::TooManyInputs);
-        }
-
-        let size_used = self.layout[0..curr_input_count].iter().map(|t| t.1).sum();
+    pub fn get_input(&self, input: InputType) -> Result<InputData, Error> {
+        let mut layout = self.layout.take();
+        let size_used = layout.iter().map(|t| t.1).sum();
         if size_used >= 16 {
+            self.layout.set(layout);
             return Err(Error::TooManyInputs);
         }
-        self.layout[curr_input_count].0 = size_used;
-        self.layout[curr_input_count].1 = match input {
-            InputType::Single => 1,
-            InputType::Double => 2,
-            InputType::Triple => 3,
-        };
+        let push_res = layout.push((
+            size_used,
+            match input {
+                InputType::Single => 1,
+                InputType::Double => 2,
+                InputType::Triple => 3,
+            },
+        ));
+        self.layout.set(layout);
 
-        unsafe {
-            self.input_count.get().replace(curr_input_count as u16 + 1);
+        if push_res.is_err() {
+            return Err(Error::TooManyInputs);
         }
 
         Ok(InputData {
-            location: self.raw.get(),
+            location: &self.raw,
             start_offset: size_used as u16,
             _type: input,
         })
     }
 }
 
-pub trait Actuator<P: PwmPin> {
+pub trait Actuator {
     fn update_state(&mut self);
 }
 
 /// BasicActuator checks input pin 1 for state. The actuator will be turned on at max
 /// duty cycle when input pin 1 is high.
-pub struct BasicActuator<P: PwmPin> {
-    input_data: InputData,
+pub struct BasicActuator<'a, P: PwmPin> {
+    input_data: InputData<'a>,
     output_pin: P,
 }
 
-impl<P: PwmPin> BasicActuator<P> {
-    pub fn new(mut output_pin: P, input_data: InputData) -> Self {
+impl<'a, P: PwmPin> BasicActuator<'a, P> {
+    pub fn new(mut output_pin: P, input_data: InputData<'a>) -> Self {
         output_pin.disable();
         Self {
             input_data,
@@ -123,7 +117,10 @@ impl<P: PwmPin> BasicActuator<P> {
     }
 }
 
-impl<P: PwmPin> Actuator for BasicActuator<P> {
+impl<P: PwmPin> Actuator for BasicActuator<'_, P>
+where
+    P::Duty: core::ops::Div<Output = P::Duty>,
+{
     fn update_state(&mut self) {
         if self.input_data.input1_is_high().unwrap() {
             self.output_pin.set_duty(self.output_pin.get_max_duty());
@@ -134,13 +131,13 @@ impl<P: PwmPin> Actuator for BasicActuator<P> {
     }
 }
 
-pub struct TwoStateActuator<P: PwmPin> {
-    input_data: InputData,
+pub struct TriStateActuator<'a, P: PwmPin> {
+    input_data: InputData<'a>,
     output_pin: P,
 }
 
-impl<P: PwmPin> TwoStateActuator<P> {
-    pub fn new(mut output_pin: P, input_data: InputData) -> Self {
+impl<'a, P: PwmPin> TriStateActuator<'a, P> {
+    pub fn new(mut output_pin: P, input_data: InputData<'a>) -> Self {
         output_pin.disable();
         Self {
             output_pin,
@@ -149,7 +146,10 @@ impl<P: PwmPin> TwoStateActuator<P> {
     }
 }
 
-impl<P: PwmPin> Actuator for TwoStateActuator<P> {
+impl<P: PwmPin> Actuator for TriStateActuator<'_, P>
+where
+    P::Duty: core::ops::Div<u32, Output = P::Duty>,
+{
     fn update_state(&mut self) {
         if self.input_data.input2_is_high().unwrap() {
             self.output_pin.set_duty(self.output_pin.get_max_duty() / 2);
@@ -168,8 +168,21 @@ mod test {
     use crate::{InputArray, InputType};
 
     #[test]
+    fn borrow_checking() {
+        let inputs = InputArray::new();
+        let data = match inputs.get_input(InputType::Single) {
+            Ok(data) => data,
+            Err(e) => panic!("failed to get data: {:?}", e),
+        };
+
+        // core::mem::drop(inputs);
+
+        data.input1_is_high();
+    }
+
+    #[test]
     fn adding_single_input() {
-        let mut inputs = InputArray::new();
+        let inputs = InputArray::new();
         let data = match inputs.get_input(InputType::Single) {
             Ok(data) => data,
             Err(e) => panic!("failed to get data: {:?}", e),
@@ -186,7 +199,7 @@ mod test {
 
     #[test]
     fn add_double_input() {
-        let mut inputs = InputArray::new();
+        let inputs = InputArray::new();
         let data = match inputs.get_input(InputType::Double) {
             Ok(data) => data,
             Err(e) => panic!("failed to get data: {:?}", e),
@@ -213,7 +226,7 @@ mod test {
 
     #[test]
     fn add_single_double_inputs() {
-        let mut inputs = InputArray::new();
+        let inputs = InputArray::new();
         let single_data = match inputs.get_input(InputType::Single) {
             Ok(d) => d,
             Err(e) => panic!("failed to get data: {:?}", e),
