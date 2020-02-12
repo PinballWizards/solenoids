@@ -14,9 +14,23 @@
       <sourceFolder url="file://$MODULE_DIR$/solenoids/examples" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/solenoids/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/solenoids/benches" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/tcc_pwm/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/tcc/examples" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/tcc/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/tcc/benches" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/tcc_pwm/examples" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/tcc_pwm/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/tcc_pwm/benches" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/tcc_channel_builder/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/tcc_channel_builder/examples" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/tcc_channel_builder/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/tcc_channel_builder/benches" isTestSource="true" />
       <excludeFolder url="file://$MODULE_DIR$/board/target" />
       <excludeFolder url="file://$MODULE_DIR$/solenoids/target" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
+      <excludeFolder url="file://$MODULE_DIR$/tcc/target" />
+      <excludeFolder url="file://$MODULE_DIR$/tcc_channel_builder/target" />
+      <excludeFolder url="file://$MODULE_DIR$/tcc_pwm/target" />
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />

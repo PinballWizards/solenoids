@@ -9,23 +9,26 @@ use rtfm;
 use hal::{
     clock::GenericClockController,
     delay::Delay,
-    gpio::{Output, Pa16, Pa17, Pa5, PushPull},
+    gpio::{Output, Pa17, Pa5, PushPull},
     pac::Peripherals,
     prelude::*,
+    spi_master,
 };
-use palantir::{
-    feather_bus as bus,
-    messages::{DiscoveryAck, DiscoveryRequest, ReceivedMessage},
-    Palantir,
-};
-use solenoids::InputArray;
+use palantir::{feather_bus as bus, Palantir};
+use solenoids;
 
 use bus::UartBus;
+
+mod periphs;
+mod pwm;
 
 const DEVICE_ADDRESS: u8 = 0x2;
 
 type ReceiveEnablePin = Pa5<Output<PushPull>>;
 type StatusLEDPin = Pa17<Output<PushPull>>;
+
+static mut PWM_CONTROLLER: Option<pwm::Controller> = None;
+static mut INPUT_ARRAY: Option<solenoids::InputArray> = None;
 
 #[rtfm::app(device = hal::pac)]
 const APP: () = {
@@ -34,6 +37,7 @@ const APP: () = {
         sercom0: hal::pac::SERCOM0,
         status_led: StatusLEDPin,
         delay: Delay,
+        solenoids: periphs::Solenoids<'static, 'static>,
     }
     #[init]
     fn init(cx: init::Context) -> init::LateResources {
@@ -63,11 +67,43 @@ const APP: () = {
         // This MUST be done AFTER
         uart.enable_rxc_interrupt();
 
+        let spi = spi_master(
+            &mut clocks,
+            1.mhz(),
+            peripherals.SERCOM4,
+            &mut peripherals.PM,
+            pins.sck,
+            pins.mosi,
+            pins.miso,
+            &mut pins.port,
+        );
+
+        unsafe {
+            PWM_CONTROLLER = Some(pwm::Controller::new(
+                &mut clocks,
+                50.hz(),
+                peripherals.TCC0,
+                peripherals.TCC1,
+                peripherals.TCC2,
+                peripherals.TC3,
+                &mut peripherals.PM,
+            ));
+            INPUT_ARRAY = Some(solenoids::InputArray::new());
+        }
+
+        let solenoids = unsafe {
+            periphs::Solenoids::new(
+                INPUT_ARRAY.as_mut().unwrap(),
+                PWM_CONTROLLER.as_mut().unwrap().make_channels(),
+            )
+        };
+
         init::LateResources {
             palantir: Palantir::new_slave(DEVICE_ADDRESS, uart),
             sercom0: unsafe { Peripherals::steal().SERCOM0 },
             status_led: pins.d13.into_push_pull_output(&mut pins.port),
             delay: Delay::new(cx.core.SYST, &mut clocks),
+            solenoids,
         }
     }
 

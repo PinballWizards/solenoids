@@ -4,6 +4,8 @@ use core::cell::Cell;
 use embedded_hal::PwmPin;
 use heapless::{consts::*, Vec};
 
+pub mod controller;
+
 #[derive(Debug)]
 pub enum Error {
     TooManyInputs,
