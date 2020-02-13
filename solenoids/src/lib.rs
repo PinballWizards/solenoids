@@ -4,8 +4,6 @@ use core::cell::Cell;
 use embedded_hal::PwmPin;
 use heapless::{consts::*, Vec};
 
-pub mod controller;
-
 #[derive(Debug)]
 pub enum Error {
     TooManyInputs,
@@ -17,37 +15,13 @@ pub enum InputType {
     Triple,
 }
 
-pub struct InputData<'a> {
-    location: &'a Cell<u16>,
+#[derive(Clone)]
+struct InputData {
     start_offset: u16,
     _type: InputType,
 }
 
-impl<'a> InputData<'a> {
-    pub fn input1_is_high(&self) -> Option<bool> {
-        match self._type {
-            InputType::Single | InputType::Double | InputType::Triple => {
-                Some(self.location.get() & (1 << (0 + self.start_offset)) != 0)
-            }
-        }
-    }
-
-    pub fn input2_is_high(&self) -> Option<bool> {
-        match self._type {
-            InputType::Single => None,
-            InputType::Double | InputType::Triple => {
-                Some(self.location.get() & (1 << (1 + self.start_offset)) != 0)
-            }
-        }
-    }
-
-    pub fn input3_is_high(&self) -> Option<bool> {
-        match self._type {
-            InputType::Single | InputType::Double => None,
-            InputType::Triple => Some(self.location.get() & (1 << (2 + self.start_offset)) != 0),
-        }
-    }
-}
+pub struct InputRead(bool, bool, bool);
 
 // (start_offset, len)
 type InputLayout = Vec<(u8, u8), U6>;
@@ -91,72 +65,71 @@ impl InputArray {
         }
 
         Ok(InputData {
-            location: &self.raw,
             start_offset: size_used as u16,
             _type: input,
         })
     }
+
+    pub fn read(&self, input_data: &InputData) -> InputRead {
+        InputRead(
+            self.raw.get() & (1 << (0 + input_data.start_offset)) != 0,
+            self.raw.get() & (1 << (1 + input_data.start_offset)) != 0,
+            self.raw.get() & (1 << (2 + input_data.start_offset)) != 0,
+        )
+    }
 }
 
-pub trait Actuator {
-    fn update_state(&mut self);
+pub trait Actuator<P: PwmPin> {
+    fn update_state(&mut self, input_array: &InputArray, pwm_pin: &mut P);
 }
 
 /// BasicActuator checks input pin 1 for state. The actuator will be turned on at max
 /// duty cycle when input pin 1 is high.
-pub struct BasicActuator<'a, P: PwmPin> {
-    input_data: InputData<'a>,
-    output_pin: P,
+pub struct BasicActuator<'a> {
+    input_data: InputData,
 }
 
-impl<'a, P: PwmPin> BasicActuator<'a, P> {
-    pub fn new(mut output_pin: P, input_data: InputData<'a>) -> Self {
-        output_pin.disable();
-        Self {
-            input_data,
-            output_pin,
-        }
+impl<'a> BasicActuator<'a> {
+    pub fn new(input_data: InputData) -> Self {
+        Self { input_data }
     }
 }
 
-impl<P: PwmPin> Actuator for BasicActuator<'_, P>
+impl<P: PwmPin> Actuator for BasicActuator<'_>
 where
     P::Duty: core::ops::Div<Output = P::Duty>,
 {
-    fn update_state(&mut self) {
-        if self.input_data.input1_is_high().unwrap() {
-            self.output_pin.set_duty(self.output_pin.get_max_duty());
-            self.output_pin.enable();
+    fn update_state(&self, input_array: &InputArray, output_pin: &mut P) {
+        let res = input_array.read(&self.input_data);
+        if res.0 {
+            output_pin.set_duty(output_pin.get_max_duty());
+            output_pin.enable();
         } else {
-            self.output_pin.disable();
+            output_pin.disable();
         }
     }
 }
 
-pub struct TriStateActuator<'a, P: PwmPin> {
-    input_data: InputData<'a>,
-    output_pin: P,
+pub struct TriStateActuator {
+    input_data: InputData,
 }
 
-impl<'a, P: PwmPin> TriStateActuator<'a, P> {
-    pub fn new(mut output_pin: P, input_data: InputData<'a>) -> Self {
-        output_pin.disable();
-        Self {
-            output_pin,
-            input_data,
-        }
+impl TriStateActuator {
+    pub fn new(input_data: InputData) -> Self {
+        Self { input_data }
     }
 }
 
-impl<P: PwmPin> Actuator for TriStateActuator<'_, P>
+impl<P: PwmPin> Actuator for TriStateActuator
 where
     P::Duty: core::ops::Div<u32, Output = P::Duty>,
 {
-    fn update_state(&mut self) {
-        if self.input_data.input2_is_high().unwrap() {
+    fn update_state(&self, input_array: &InputArray, output_pin: &mut P) {
+        let res = input_array.read(&self.input_data);
+        if res.1 {
             self.output_pin.set_duty(self.output_pin.get_max_duty() / 2);
             self.output_pin.enable();
-        } else if self.input_data.input1_is_high().unwrap() {
+        } else if res.0 {
             self.output_pin.set_duty(self.output_pin.get_max_duty());
             self.output_pin.enable();
         } else {

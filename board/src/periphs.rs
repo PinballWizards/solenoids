@@ -1,25 +1,50 @@
+use bitflags::bitflags;
+use embedded_hal::{blocking::spi::Transfer, digital::v2::OutputPin, Pwm, PwmPin};
 use feather_m0 as hal;
+use hal::{
+    clock::GenericClockController,
+    pwm::{Channel, Pwm0, Pwm1, Pwm2, Pwm3},
+    time::Hertz,
+};
+use solenoids::{Actuator, BasicActuator, InputArray, InputData};
 
-use crate::pwm::{AllChannels, ChannelPin, Tcc2Channels};
-use hal::pwm::Pwm2;
-use solenoids::{Actuator, BasicActuator, InputArray, InputType};
+pub struct Solenoids<B: Transfer<u8>, P: OutputPin, S: Actuator> {
+    spi_bus: B,
+    load_pin: P,
+    pwm_controller: crate::pwm::Controller,
+    input_array: InputArray,
 
-pub struct Solenoids<'a, 'b> {
-    // Whenever you add a new pin here you must also add it to the new() and
-    // update_states() functions!!!
-    pin1: BasicActuator<'a, ChannelPin<'b, Pwm2>>,
+    pin1: BasicActuator,
 }
 
-impl<'a, 'b> Solenoids<'a, 'b> {
-    pub fn new(input_array: &'a mut InputArray, channels: AllChannels<'b>) -> Self {
-        let input1 = input_array.get_input(InputType::Single).unwrap();
-        let channel_pin1 = channels.2.cc0;
+impl<B: Transfer<u8>, P: OutputPin, S: Actuator> Solenoids<B, P, S> {
+    pub fn new(spi_bus: B, load_pin: P, pwm_controller: crate::pwm::Controller) -> Self {
         Self {
-            pin1: BasicActuator::new(channel_pin1, input1),
+            spi_bus,
+            load_pin,
+            pwm_controller,
+            input_array: InputArray::new(),
+            solenoids: None,
         }
     }
 
+    pub fn add_solenoids<F: FnOnce(&InputArray, &mut crate::pwm::Controller) -> S>(
+        &mut self,
+        f: F,
+    ) {
+        self.solenoids = Some(f(&self.input_array, &mut self.pwm_controller));
+    }
+
     pub fn update_states(&mut self) {
-        self.pin1.update_state();
+        self.read_inputs();
+    }
+
+    fn read_inputs(&mut self) {
+        self.load_pin.set_low().unwrap_or_default();
+        let mut buf = [0u8; 2];
+        self.spi_bus.transfer(&mut buf);
+        self.load_pin.set_high().unwrap_or_default();
+
+        self.input_array.update(u16::from_le_bytes(buf))
     }
 }

@@ -15,6 +15,7 @@ cortex-m-rtfm = "~0.5"
 embedded-hal = "~0.2"
 nb = "~0.1"
 feather_m0 = { version = "~0.6", features = ["unproven"] }
+bitflags = "~1.2.1"
 
 solenoids = { path = "../solenoids", default-features = false }
 palantir = { git = "https://github.com/PinballWizards/palantir.git", branch = "wt/simplified", features = ["feather_bus"], default-features = false}
