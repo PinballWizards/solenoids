@@ -20,7 +20,6 @@ use solenoids;
 use bus::UartBus;
 
 mod periphs;
-mod pwm;
 
 const DEVICE_ADDRESS: u8 = 0x2;
 
@@ -34,6 +33,7 @@ const APP: () = {
         sercom0: hal::pac::SERCOM0,
         status_led: StatusLEDPin,
         delay: Delay,
+        solenoids: periphs::Solenoids,
     }
     #[init]
     fn init(cx: init::Context) -> init::LateResources {
