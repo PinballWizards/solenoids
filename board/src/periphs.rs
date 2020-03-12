@@ -7,8 +7,9 @@ use hal::{
 };
 
 use solenoids::{
+    actuators::Basic,
     pwm::{Channel, Configuration, Controller},
-    Actuator, DualInput, InputArray, InputData, SingleInput,
+    Actuator, InputArray, InputData, SingleInput,
 };
 
 type Bus = SPIMaster4<Sercom4Pad0<Pa12<PfD>>, Sercom4Pad2<Pb10<PfD>>, Sercom4Pad3<Pb11<PfD>>>;
@@ -20,29 +21,31 @@ pub struct Solenoids {
     bus: Bus,
     load_pin: LoadPin,
 
-    pin1: Actuator<SingleInput>,
-    pin2: Actuator<DualInput>,
+    pin1: Basic,
+    pin2: Basic,
 }
 
 impl Solenoids {
     pub fn new(pwm: Controller, input_bus: Bus, input_load_pin: LoadPin) -> Self {
         let mut input_array = InputArray::new();
+        let pin1 = input_array.make_actuator(Configuration::Tc3).unwrap();
+        let pin2 = input_array
+            .make_actuator(Configuration::Tcc0(Channel::_0))
+            .unwrap();
         Self {
             pwm,
             input_array,
             bus: input_bus,
             load_pin: input_load_pin,
-            pin1: input_array.make_actuator(Configuration::Tc3).unwrap(),
-            pin2: input_array
-                .make_actuator(Configuration::Tcc0(Channel::_0))
-                .unwrap(),
+            pin1,
+            pin2,
         }
     }
 
     pub fn update_states(&mut self) {
         self.read_inputs();
 
-        self.update_pin1(self.input_array.read(self.pin1.config()))
+        self.update_pin1(self.input_array.read(self.pin1.input_config()))
     }
 
     fn read_inputs(&mut self) {
