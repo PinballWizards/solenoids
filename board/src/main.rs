@@ -20,7 +20,7 @@ use rtfm;
 use hal::{
     clock::GenericClockController,
     delay::Delay,
-    gpio::{Output, Pa17, Pa5, PushPull},
+    gpio::{Output, Pa17, Pa15, PushPull},
     pac::Peripherals,
     prelude::*,
     spi_master,
@@ -41,7 +41,7 @@ mod periphs;
 const DEVICE_ADDRESS: u8 = 0x2;
 
 //Alias the pin names
-type ReceiveEnablePin = Pa5<Output<PushPull>>;
+type ReceiveEnablePin = Pa15<Output<PushPull>>;
 type StatusLEDPin = Pa17<Output<PushPull>>;
 
 //Start rtfm
@@ -56,7 +56,7 @@ const APP: () = {
         solenoids: periphs::Solenoids,
     }
     //Initialization sequence/Object definition
-    #[init]
+    #[init(spawn = [blink_led])]
     fn init(cx: init::Context) -> init::LateResources {
         let mut peripherals = Peripherals::take().unwrap();
         let mut clocks = GenericClockController::with_external_32kosc(
@@ -109,7 +109,10 @@ const APP: () = {
             &mut peripherals.PM,
         );
 
-        //bring in another group of resources
+        //Set up tasks
+        cx.spawn.blink_led().unwrap();
+
+        //Define resources leaving init
 
         init::LateResources {
             palantir: Palantir::new_slave(DEVICE_ADDRESS, uart),
@@ -120,11 +123,23 @@ const APP: () = {
         }
     }
 
-    //This is where stuff will occur
-    #[idle(resources = [status_led])]
+    //This is where the machine lives
+    #[idle]
     fn idle(cx: idle::Context) -> ! {
         loop {}
     }
+
+    //Blinking an LED
+    #[task(resources = [status_led, delay])]
+    fn blink_led(cx: blink_led::Context) { 
+        loop {
+            cx.resources.delay.delay_ms(1000u16);
+            cx.resources.status_led.set_high().unwrap();
+            cx.resources.delay.delay_ms(1000u16);
+            cx.resources.status_led.set_low().unwrap();
+        }
+    }
+
 
     //comms stuff
     #[task(binds = SERCOM0, resources = [palantir, sercom0])]
