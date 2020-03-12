@@ -1,11 +1,22 @@
+//File:     ~/solenoids/board/src/main.rs
+//Authors:  Will Tekulve + Patrick Taliaferro
+//Date:     February-March 2020
+
+//Real-Time OS for the masses (rtfm) is used
+//and evoked to compile the program.
 #![no_std]
 #![no_main]
 
+//Set the panicking behavior to halt
 extern crate panic_halt;
 
+//Mask the specific board used
+//Specify rtfm is used
 use feather_m0 as hal;
 use rtfm;
 
+//Assign hal several things that an MCU needs
+//for this program.
 use hal::{
     clock::GenericClockController,
     delay::Delay,
@@ -14,20 +25,29 @@ use hal::{
     prelude::*,
     spi_master,
 };
+
+//Create a comms object to interact with the other boards.
 use palantir::{feather_bus as bus, Palantir};
 use solenoids;
 
+//Set up the Uartbus for use with palantir
 use bus::UartBus;
 
+//bring in periphs.rs module
 mod periphs;
 
+//Set the device address, this is used by
+//palantir to create a slave process later on
 const DEVICE_ADDRESS: u8 = 0x2;
 
+//Alias the pin names
 type ReceiveEnablePin = Pa5<Output<PushPull>>;
 type StatusLEDPin = Pa17<Output<PushPull>>;
 
+//Start rtfm
 #[rtfm::app(device = hal::pac)]
 const APP: () = {
+    //Define MCU resources needed within rtfm
     struct Resources<'a> {
         palantir: Palantir<UartBus<ReceiveEnablePin>>,
         sercom0: hal::pac::SERCOM0,
@@ -35,6 +55,7 @@ const APP: () = {
         delay: Delay,
         solenoids: periphs::Solenoids,
     }
+    //Initialization sequence/Object definition
     #[init]
     fn init(cx: init::Context) -> init::LateResources {
         let mut peripherals = Peripherals::take().unwrap();
@@ -46,7 +67,7 @@ const APP: () = {
         );
         let mut pins = hal::Pins::new(peripherals.PORT);
 
-        let mut transmit_enable = pins.a4.into_push_pull_output(&mut pins.port);
+        let mut transmit_enable = pins.d5.into_push_pull_output(&mut pins.port);
         transmit_enable.set_low().unwrap();
 
         let uart = UartBus::easy_new(
@@ -74,7 +95,9 @@ const APP: () = {
             &mut pins.port,
         );
 
+        //load a0 to bring in a latch output
         let load_pin = pins.a0.into_push_pull_output(&mut pins.port);
+
 
         let pwm_controller = solenoids::pwm::Controller::new(
             &mut clocks,
@@ -86,6 +109,8 @@ const APP: () = {
             &mut peripherals.PM,
         );
 
+        //bring in another group of resources
+
         init::LateResources {
             palantir: Palantir::new_slave(DEVICE_ADDRESS, uart),
             sercom0: unsafe { Peripherals::steal().SERCOM0 },
@@ -95,11 +120,13 @@ const APP: () = {
         }
     }
 
+    //This is where stuff will occur
     #[idle(resources = [status_led])]
     fn idle(cx: idle::Context) -> ! {
         loop {}
     }
 
+    //comms stuff
     #[task(binds = SERCOM0, resources = [palantir, sercom0])]
     fn sercom0(cx: sercom0::Context) {
         let intflag = cx.resources.sercom0.usart_mut().intflag.read();
