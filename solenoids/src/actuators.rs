@@ -1,6 +1,5 @@
 use crate::pwm::{Configuration, State};
 use crate::{pwm, Actuator, InputConfig, InputData, SingleInput};
-use std::marker::PhantomData;
 
 pub struct Basic {
     input_config: InputConfig<SingleInput>,
@@ -20,14 +19,14 @@ impl Actuator<SingleInput> for Basic {
     }
 
     fn pwm_config(&self) -> &Configuration {
-        &self.pwm_config()
+        &self.pwm_config
     }
 
     fn update_state(&self, data: &InputData<SingleInput>, curr_state: State) -> State {
         if data.is_input1_high() {
             State {
                 enabled: true,
-                duty_cycle: u32::MAX,
+                duty_cycle: core::u32::MAX,
             }
         } else {
             State {

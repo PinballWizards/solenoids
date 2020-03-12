@@ -13,11 +13,16 @@ pub enum Error {
 }
 
 pub trait InputType {
+    fn new() -> Self;
     fn size(&self) -> u8;
 }
 
 pub struct SingleInput;
 impl InputType for SingleInput {
+    fn new() -> Self {
+        SingleInput
+    }
+
     fn size(&self) -> u8 {
         0
     }
@@ -25,6 +30,10 @@ impl InputType for SingleInput {
 
 pub struct DualInput;
 impl InputType for DualInput {
+    fn new() -> Self {
+        DualInput
+    }
+
     fn size(&self) -> u8 {
         1
     }
@@ -32,13 +41,17 @@ impl InputType for DualInput {
 
 pub struct TriInput;
 impl InputType for TriInput {
+    fn new() -> Self {
+        TriInput
+    }
+
     fn size(&self) -> u8 {
         2
     }
 }
 
 #[derive(Clone)]
-struct InputConfig<I: InputType> {
+pub struct InputConfig<I: InputType> {
     start_offset: u16,
     input_type: I,
 }
@@ -124,7 +137,7 @@ impl InputArray {
         &mut self,
         channel_config: pwm::Configuration,
     ) -> Result<A, Error> {
-        Ok(A::new(self.get_input(input_type)?, channel_config))
+        Ok(A::new(self.get_input(I::new())?, channel_config))
     }
 }
 

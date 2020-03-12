@@ -76,11 +76,22 @@ const APP: () = {
 
         let load_pin = pins.a0.into_push_pull_output(&mut pins.port);
 
+        let pwm_controller = solenoids::pwm::Controller::new(
+            &mut clocks,
+            100.hz(),
+            peripherals.TCC0,
+            peripherals.TCC1,
+            peripherals.TCC2,
+            peripherals.TC3,
+            &mut peripherals.PM,
+        );
+
         init::LateResources {
             palantir: Palantir::new_slave(DEVICE_ADDRESS, uart),
             sercom0: unsafe { Peripherals::steal().SERCOM0 },
             status_led: pins.d13.into_push_pull_output(&mut pins.port),
             delay: Delay::new(cx.core.SYST, &mut clocks),
+            solenoids: periphs::Solenoids::new(pwm_controller, spi, load_pin),
         }
     }
 
